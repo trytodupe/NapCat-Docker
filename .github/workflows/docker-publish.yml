@@ -2,37 +2,88 @@ name: docker-publish
 
 on:
   workflow_dispatch:
+    inputs:
+      napcat_ref:
+        description: NapCatQQ git ref to build
+        required: true
+        default: v4.18.2-ws-filter
+        type: string
+      image_tag:
+        description: GHCR image tag to publish
+        required: true
+        default: v4.18.2-ws-filter
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GHCR_IMAGE: ghcr.io/trytodupe/napcat-docker
+  NAPCAT_REPO: trytodupe/NapCatQQ
 
 jobs:
-  publish-dockerhub:
+  publish-ghcr:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Docker repository
         uses: actions/checkout@v4
-      - name: Get artifacts
+
+      - name: Checkout NapCatQQ source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.NAPCAT_REPO }}
+          ref: ${{ inputs.napcat_ref }}
+          path: NapCatQQ
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Build NapCat.Shell.zip
+        working-directory: NapCatQQ
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash get_artifacts.sh ${{ secrets.GITHUB_TOKEN }} $(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/NapNeko/NapCatQQ/releases/latest" | jq -r '.tag_name')
+          set -euo pipefail
+          pnpm install
+          pnpm --filter napcat-webui-frontend run build
+          pnpm run build:shell
+          pnpm --filter napcat-plugin-builtin run build
+          mv packages/napcat-shell/dist shell-dist
+          cd shell-dist
+          npm install --omit=dev
+          rm -f package-lock.json
+          zip -qr "$GITHUB_WORKSPACE/NapCat.Shell.zip" .
+
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v3
-      - name: Login to Docker Hub
+
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      # Fork from https://github.com/koishijs/boilerplate/blob/master/.github/workflows/docker.yml
-      - name: Run buildx and push
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
         env:
-          DOCKER_REPO: mlikiowa/napcat-docker
-          GITHUB_REPO: NapNeko/NapCatQQ
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          TAG=$(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/NapNeko/NapCatQQ/releases/latest" | jq -r '.tag_name')
+          set -euo pipefail
           docker buildx build \
             --output "type=image,push=true" \
             --platform linux/amd64,linux/arm64 \
-            --tag ${DOCKER_REPO}:$TAG \
-            --tag ${DOCKER_REPO}:latest \
+            --tag ${GHCR_IMAGE}:${IMAGE_TAG} \
             --file ./Dockerfile \
             .
-      - name: Docker Hub logout
+
+      - name: GHCR logout
         if: always()
-        run: docker logout
+        run: docker logout ghcr.io
