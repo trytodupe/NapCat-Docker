@@ -13,6 +13,9 @@ on:
         required: true
         default: v4.18.2-ws-filter
         type: string
+  repository_dispatch:
+    types:
+      - napcat-ws-filter-tag
 
 permissions:
   contents: read
@@ -33,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.NAPCAT_REPO }}
-          ref: ${{ inputs.napcat_ref }}
+          ref: ${{ github.event.client_payload.napcat_ref || inputs.napcat_ref }}
           path: NapCatQQ
 
       - name: Setup Node.js
@@ -75,7 +78,7 @@ jobs:
 
       - name: Build and push image
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
+          IMAGE_TAG: ${{ github.event.client_payload.image_tag || inputs.image_tag }}
         run: |
           set -euo pipefail
           docker buildx build \
