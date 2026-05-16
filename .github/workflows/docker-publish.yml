@@ -44,13 +44,26 @@ jobs:
         with:
           node-version: 20.x
 
+      - name: Detect NapCat build layout
+        id: layout
+        working-directory: NapCatQQ
+        run: |
+          set -euo pipefail
+          if [ -f pnpm-workspace.yaml ] && [ -d packages/napcat-shell ]; then
+            echo "kind=monorepo" >> "$GITHUB_OUTPUT"
+          else
+            echo "kind=legacy" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup pnpm
+        if: steps.layout.outputs.kind == 'monorepo'
         uses: pnpm/action-setup@v4
         with:
           version: 9
           run_install: false
 
-      - name: Build NapCat.Shell.zip
+      - name: Build NapCat.Shell.zip (monorepo)
+        if: steps.layout.outputs.kind == 'monorepo'
         working-directory: NapCatQQ
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,6 +75,21 @@ jobs:
           pnpm --filter napcat-plugin-builtin run build
           mv packages/napcat-shell/dist shell-dist
           cd shell-dist
+          npm install --omit=dev
+          rm -f package-lock.json
+          zip -qr "$GITHUB_WORKSPACE/NapCat.Shell.zip" .
+
+      - name: Build NapCat.Shell.zip (legacy)
+        if: steps.layout.outputs.kind == 'legacy'
+        working-directory: NapCatQQ
+        run: |
+          set -euo pipefail
+          npm install
+          cd napcat.webui
+          npm install
+          cd ..
+          npm run build:shell
+          cd dist
           npm install --omit=dev
           rm -f package-lock.json
           zip -qr "$GITHUB_WORKSPACE/NapCat.Shell.zip" .
