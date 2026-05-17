@@ -67,6 +67,7 @@ jobs:
         working-directory: NapCatQQ
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NAPCAT_VERSION: ${{ github.event.client_payload.napcat_ref || inputs.napcat_ref }}
         run: |
           set -euo pipefail
           pnpm install
